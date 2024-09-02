@@ -1,0 +1,4 @@
+baseURL = 'https://hugo-5w7.pages.dev/'
+title = 'My New Hugo Site111'
+[permalinks]
+  post = "/:slug/"

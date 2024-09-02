@@ -1,0 +1,106 @@
+name: Publish Random Hugo Posts
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # 每天00:00 UTC运行
+
+jobs:
+  update-posts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # 获取完整的历史记录，方便以后的提交记录
+
+      - name: Publish Random Posts
+        run: |
+          echo "开始发布随机文章..."
+
+          # 随机选择要发布的文章数
+          random_count=$((RANDOM % 4)) # 0 到 3
+          echo "随机选择的文章数量为: $random_count"
+
+          # 如果没有文章需要发布则返回
+          if [ $random_count -eq 0 ]; then
+              echo "没有需要发布的文章，退出..."
+              exit 0
+          fi
+
+          # 获取草稿文章
+          drafts=$(find ./content/posts -name "*.md" -exec grep -l "draft: true" {} +)
+          drafts_array=($drafts)
+
+          echo "找到的草稿文章: ${drafts_array[@]}"
+          if [ ${#drafts_array[@]} -eq 0 ]; then
+              echo "没有草稿文章，退出..."
+              exit 0
+          fi
+
+          # 随机选择文章
+          selected_posts=()
+          for i in $(seq 0 $((random_count - 1))); do
+              index=$((RANDOM % ${#drafts_array[@]}))
+              selected_posts+=(${drafts_array[index]})
+              echo "选择的文章: ${drafts_array[index]}"
+              unset drafts_array[index]  # 移除已选择文章
+              drafts_array=("${drafts_array[@]}")  # 重新索引数组
+          done
+
+          # 更新选择的文章
+          today=$(date +%Y-%m-%d)
+          for post in "${selected_posts[@]}"; do
+              echo "正在更新文章: $post"
+
+              # 将 draft 设置为 false 并更新日期
+              sed -i -E "s/draft: true/draft: false/" "$post"
+              sed -i -E "s/publishDate: .*/publishDate: $today/" "$post"
+              sed -i -E "s/date: .*/date: $today/" "$post"
+              echo "将 'draft' 设置为 false，并将发布日期更改为 $today"
+
+              # 添加内链和 "also read"
+              tag=$(grep -m 1 "tags:" "$post" | awk '{print $2}' | sed 's/-//g')
+              category=$(grep -m 1 "categories:" "$post" | awk '{print $2}')
+              echo "检测到标签: $tag，分类: $category"
+
+              # 添加内链
+              content=$(cat "$post")
+              if echo "$content" | grep -qi "$category"; then
+                  content=$(echo "$content" | sed "s/\($category\)/[[$category]]/Ig")
+                  echo "为文章添加内链到分类: $category"
+              else
+                  echo "未在文章内容中找到分类: $category"
+              fi
+
+              # 添加 "also read"
+              count_h2=$(echo "$content" | grep -c "^## ")
+              echo "文章中 H2 标签的数量: $count_h2"
+              if [ "$count_h2" -ge 2 ]; then
+                  also_read_posts=$(find ./content/posts -name "*.md" | grep "$tag" | grep -v "$(basename $post)")
+                  if [ -z "$also_read_posts" ]; then
+                      also_read_posts=$(find ./content/posts -name "*.md" | grep "$category" | grep -v "$(basename $post)")
+                  fi
+
+                  if [ -n "$also_read_posts" ]; then
+                      first_also_read=$(basename $(echo "$also_read_posts" | shuf -n 1) .md)
+                      second_also_read=$(basename $(echo "$also_read_posts" | shuf -n 1) .md)
+                      content=$(echo "$content" | sed "s/^## \\S\\+ /&\nalso read: [[$first_also_read]]/g; s/^## \\S\\+ /&\nalso read: [[$second_also_read]]/g;" | sed -E '0,/^(## .+)/!b; s/^(## .+)/\n&/;')
+                      echo "为文章添加: 'also read' 指向: $first_also_read 和 $second_also_read"
+                  else
+                      echo "未找到与标签或分类匹配的文章"
+                  fi
+              else
+                  echo "H2 标签数量不足，未添加 'also read'"
+              fi
+
+              echo "$content" > "$post"  # 保存修改后的文章内容
+          done
+
+      - name: Commit changes
+        run: |
+          git config --local user.email "1498066696@@@.com"
+          git config --local user.name "OFZFZS"
+          git add .
+          git commit -m "Automatically published random posts"
+          git push
+          echo "更改已成功提交并推送到远程仓库"

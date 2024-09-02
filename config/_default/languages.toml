@@ -1,0 +1,9 @@
+[en]
+  title = "Clarity"
+  LanguageName = "English"
+  weight = 1
+[es]
+  title = "xxxxxxxx"
+  LanguageName = "Spanish"
+  weight = 1
+  # tip: assign the default language the lowest Weight
